@@ -1,0 +1,60 @@
+name: Prisma Migrate Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'prisma/**'
+      - '**/*.prisma'
+
+jobs:
+  migrate-check:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: prisma
+          POSTGRES_PASSWORD: prisma
+          POSTGRES_DB: test
+        options: >
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    env:
+      DATABASE_URL: postgresql://prisma:prisma@localhost:5432/test?schema=public
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Generate Prisma Client
+      run: npx prisma generate
+    
+    - name: Check migration status
+      run: |
+        echo "Checking if database is in sync with migrations..."
+        npx prisma migrate diff --from-schema-datamodel prisma/schema.prisma --to-migrations ./prisma/migrations --script
+        
+    - name: Validate schema
+      run: npx prisma validate
+    
+    - name: Run migrations (dry run)
+      run: |
+        echo "Running migrations in dry-run mode..."
+        npx prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel prisma/schema.prisma --script
